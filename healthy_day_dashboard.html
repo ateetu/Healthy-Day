@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Healthy Day Dashboard</title>
+
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Load Babel for JSX compiling in the browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background-color: #f8fafc;
+    }
+    ::selection {
+      background-color: #a7f3d0;
+      color: #064e3b;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useMemo } = React;
+    
+    // Custom native date helper to replace date-fns and avoid CDN issues
+    const dfns = {
+      addDays: (date, amount) => {
+        const d = new Date(date);
+        d.setDate(d.getDate() + amount);
+        return d;
+      },
+      format: (date, fmt) => {
+        const d = new Date(date);
+        const yyyy = d.getFullYear();
+        const MM = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const dStr = d.getDate();
+        
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        const monthShort = monthNames.map(m => m.substring(0, 3));
+        
+        const ordinal = (n) => {
+          const s = ["th", "st", "nd", "rd"];
+          const v = n % 100;
+          return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        };
+
+        if (fmt === 'yyyy-MM-dd') return `${yyyy}-${MM}-${dd}`;
+        if (fmt === 'd') return String(dStr);
+        if (fmt === 'MMMM yyyy') return `${monthNames[d.getMonth()]} ${yyyy}`;
+        if (fmt === 'MMM do, yyyy') return `${monthShort[d.getMonth()]} ${ordinal(dStr)}, ${yyyy}`;
+        if (fmt === 'MMM do') return `${monthShort[d.getMonth()]} ${ordinal(dStr)}`;
+        
+        return String(dStr);
+      },
+      addMonths: (date, amount) => {
+        const d = new Date(date);
+        d.setMonth(d.getMonth() + amount);
+        return d;
+      },
+      subMonths: (date, amount) => {
+        const d = new Date(date);
+        d.setMonth(d.getMonth() - amount);
+        return d;
+      },
+      startOfMonth: (date) => new Date(date.getFullYear(), date.getMonth(), 1),
+      endOfMonth: (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0),
+      startOfWeek: (date) => {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day;
+        return new Date(d.setDate(diff));
+      },
+      endOfWeek: (date) => {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() + (6 - day);
+        return new Date(d.setDate(diff));
+      },
+      eachDayOfInterval: ({ start, end }) => {
+        const days = [];
+        let current = new Date(start);
+        current.setHours(0,0,0,0);
+        const endDay = new Date(end);
+        endDay.setHours(0,0,0,0);
+        
+        while (current <= endDay) {
+          days.push(new Date(current));
+          current.setDate(current.getDate() + 1);
+        }
+        return days;
+      },
+      isSameDay: (d1, d2) => {
+        const date1 = new Date(d1);
+        const date2 = new Date(d2);
+        return date1.getFullYear() === date2.getFullYear() &&
+               date1.getMonth() === date2.getMonth() &&
+               date1.getDate() === date2.getDate();
+      },
+      getDay: (date) => new Date(date).getDay()
+    };
+
+    // SVG Icons
+    const IconPlus = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    );
+    const IconX = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    );
+    const IconArrowRight = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+    );
+    const IconCheckCircle2 = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9 12l2 2 4-4"></path></svg>
+    );
+    const IconChevronLeft = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    );
+    const IconChevronRight = ({ className }) => (
+      <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    );
+
+    function HealthyDay() {
+      const [profile, setProfile] = useState({
+        sex: 'female',
+        age: 30,
+        weight: 140, 
+        height: 65,  
+        unit: 'imperial' 
+      });
+
+      // Added sleep to intake state
+      const [intake, setIntake] = useState({
+        calories: 1800,
+        protein: 60,
+        fiber: 20,
+        hydration: 64, 
+        workout: 1, 
+        stress: 5, 
+        sleep: 7
+      });
+
+      const [scenarios, setScenarios] = useState([]);
+      const [scenarioName, setScenarioName] = useState('My Typical Day');
+      const [currentDate, setCurrentDate] = useState(new Date());
+      
+      const [dailyLogs, setDailyLogs] = useState(() => {
+        const dummyData = {};
+        const today = new Date();
+        for (let i = -14; i <= 0; i++) {
+          const date = dfns.addDays(today, i);
+          const dateStr = dfns.format(date, 'yyyy-MM-dd');
+          dummyData[dateStr] = {
+            calories: 1500 + Math.random() * 800,
+            protein: 40 + Math.random() * 80,
+            fiber: 15 + Math.random() * 20,
+            hydration: 40 + Math.random() * 60,
+            workout: Number((Math.random() * 2).toFixed(1)),
+            stress: Math.floor(1 + Math.random() * 9),
+            sleep: Number((5 + Math.random() * 4).toFixed(1)),
+            score: Math.floor(60 + Math.random() * 40)
+          };
+        }
+        return dummyData;
+      });
+      const [selectedDate, setSelectedDate] = useState(new Date());
+
+      const goals = useMemo(() => {
+        const w_kg = profile.unit === 'imperial' ? profile.weight * 0.453592 : profile.weight;
+        const h_cm = profile.unit === 'imperial' ? profile.height * 2.54 : profile.height;
+        
+        let bmr = (10 * w_kg) + (6.25 * h_cm) - (5 * profile.age);
+        bmr = profile.sex === 'male' ? bmr + 5 : bmr - 161;
+        
+        let activityMultiplier = 1.2;
+        if (intake.workout >= 2) activityMultiplier = 1.725;
+        else if (intake.workout >= 1) activityMultiplier = 1.55;
+        else if (intake.workout > 0) activityMultiplier = 1.375;
+        
+        const tdee = Math.max(1200, Math.round(bmr * activityMultiplier));
+        const proteinGoal = Math.round(profile.unit === 'imperial' ? profile.weight * 0.8 : w_kg * 1.76);
+        const fiberGoal = Math.max(25, Math.round((tdee / 1000) * 14));
+        
+        const w_lbs = profile.unit === 'imperial' ? profile.weight : w_kg * 2.20462;
+        const hydroGoal = Math.round(w_lbs * 0.75);
+
+        return {
+          calories: tdee,
+          protein: proteinGoal,
+          fiber: fiberGoal,
+          hydration: hydroGoal,
+          workout: 1,
+          sleep: 8
+        };
+      }, [profile, intake.workout]);
+
+      const calculateScore = (currentIntake) => {
+        const pScore = Math.min(100, (currentIntake.protein / goals.protein) * 100);
+        const fScore = Math.min(100, (currentIntake.fiber / goals.fiber) * 100);
+        const hScore = Math.min(100, (currentIntake.hydration / goals.hydration) * 100);
+        const wScore = Math.min(100, (currentIntake.workout / goals.workout) * 100);
+        
+        let cScore = 100;
+        const cRatio = currentIntake.calories / goals.calories;
+        if (cRatio < 0.8) cScore = Math.max(0, (cRatio / 0.8) * 100);
+        else if (cRatio > 1.2) cScore = Math.max(0, 100 - ((cRatio - 1.2) * 100));
+
+        const currentStress = currentIntake.stress ?? 5;
+        const sScore = Math.max(0, 100 - ((currentStress - 1) / 9) * 100);
+
+        // Sleep score calculation
+        const slScore = Math.min(100, ((currentIntake.sleep ?? 7) / goals.sleep) * 100);
+
+        // Divide by 7 instead of 6 to include sleep in the average
+        return Math.round((pScore + fScore + hScore + cScore + wScore + sScore + slScore) / 7);
+      };
+
+      const generateTips = () => {
+        const tips = [];
+        if (intake.protein < goals.protein * 0.8) tips.push("Need more protein? Try adding a scoop of protein powder, a serving of Greek yogurt, or some tofu or beans to your day. 🥜");
+        if (intake.fiber < goals.fiber * 0.8) tips.push("Fiber is low. Adding chia seeds to a smoothie or eating an apple can easily bump this up. 🍎");
+        if (intake.hydration < goals.hydration * 0.8) tips.push("Hydration is falling behind. Try keeping a full water bottle nearby and sip throughout the day! 💧");
+        if (intake.calories > goals.calories * 1.15) tips.push("Energy intake is trending high. Consider swapping processed snacks for higher-volume, lower-calorie fruits or vegetables. 🥦");
+        if (intake.workout < goals.workout * 0.5) tips.push("Moving your body is great for health! Try to sneak in a 30-minute walk or a quick home workout today. 🏃");
+        if ((intake.stress ?? 5) > 7) tips.push("Stress is running high. Consider taking a 5-minute breathing break, stretching, or stepping outside to decompress. 🧘");
+        if ((intake.sleep ?? 7) < 7) tips.push("Sleep is essential for recovery. Try to aim for 7-9 hours of quality rest tonight. 🛏️");
+        return tips;
+      };
+
+      const handleProfileChange = (e) => {
+        const { name, value } = e.target;
+        setProfile(prev => ({ ...prev, [name]: isNaN(value) || value === '' ? value : Number(value) }));
+      };
+
+      const handleIntakeChange = (e) => {
+        const { name, value } = e.target;
+        setIntake(prev => ({ ...prev, [name]: Number(value) }));
+      };
+
+      const saveScenario = () => {
+        if (!scenarioName.trim()) return;
+        const newScenario = {
+          id: Date.now(),
+          name: scenarioName,
+          intake: { ...intake },
+          score: calculateScore(intake)
+        };
+        setScenarios([...scenarios, newScenario]);
+        setScenarioName('');
+      };
+
+      const removeScenario = (id) => setScenarios(scenarios.filter(s => s.id !== id));
+
+      const logDay = () => {
+        const dateStr = dfns.format(selectedDate, 'yyyy-MM-dd');
+        setDailyLogs(prev => ({
+          ...prev,
+          [dateStr]: { ...intake, score: calculateScore(intake) }
+        }));
+      };
+
+      const nextMonth = () => setCurrentDate(dfns.addMonths(currentDate, 1));
+      const prevMonth = () => setCurrentDate(dfns.subMonths(currentDate, 1));
+      
+      const daysInMonth = dfns.eachDayOfInterval({
+        start: dfns.startOfMonth(currentDate),
+        end: dfns.endOfMonth(currentDate)
+      });
+
+      const generateWeeklySummary = (date) => {
+        const start = dfns.startOfWeek(date);
+        const end = dfns.endOfWeek(date);
+        const days = dfns.eachDayOfInterval({ start, end });
+        
+        let totalScore = 0;
+        let daysLogged = 0;
+        let totals = { calories: 0, protein: 0, fiber: 0, hydration: 0, workout: 0, stress: 0, sleep: 0 };
+
+        days.forEach(day => {
+          const dateStr = dfns.format(day, 'yyyy-MM-dd');
+          if (dailyLogs[dateStr]) {
+            totalScore += dailyLogs[dateStr].score;
+            totals.calories += dailyLogs[dateStr].calories;
+            totals.protein += dailyLogs[dateStr].protein;
+            totals.fiber += dailyLogs[dateStr].fiber;
+            totals.hydration += dailyLogs[dateStr].hydration;
+            totals.workout += dailyLogs[dateStr].workout || 0;
+            totals.stress += dailyLogs[dateStr].stress || 5;
+            totals.sleep += dailyLogs[dateStr].sleep || 7;
+            daysLogged++;
+          }
+        });
+
+        if (daysLogged === 0) return null;
+
+        return {
+          avgScore: Math.round(totalScore / daysLogged),
+          avgCalories: Math.round(totals.calories / daysLogged),
+          avgProtein: Math.round(totals.protein / daysLogged),
+          avgFiber: Math.round(totals.fiber / daysLogged),
+          avgHydration: Math.round(totals.hydration / daysLogged),
+          avgWorkout: Number((totals.workout / daysLogged).toFixed(1)),
+          avgStress: Number((totals.stress / daysLogged).toFixed(1)),
+          avgSleep: Number((totals.sleep / daysLogged).toFixed(1)),
+          daysLogged
+        };
+      };
+
+      const selectedWeekSummary = generateWeeklySummary(selectedDate);
+
+      const AvatarIcon = ({ emoji, bg }) => (
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm ${bg}`}>
+          {emoji}
+        </div>
+      );
+
+      const ProgressRing = ({ value, max, color, label, unit, emoji }) => {
+        const radius = 36;
+        const circumference = 2 * Math.PI * radius;
+        const percent = Math.min(100, Math.max(0, (value / max) * 100));
+        const offset = circumference - (percent / 100) * circumference;
+
+        return (
+          <div className="flex flex-col items-center p-4 bg-white rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="relative flex items-center justify-center w-24 h-24 mb-3">
+              <svg className="absolute w-full h-full transform -rotate-90">
+                <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
+                <circle
+                  cx="48" cy="48" r={radius}
+                  stroke="currentColor" strokeWidth="8" fill="transparent"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={offset}
+                  className={`${color} transition-all duration-700 ease-out`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute flex flex-col items-center justify-center">
+                 <span className="text-2xl mb-1">{emoji}</span>
+                 <span className="text-sm font-bold text-slate-800">{Math.round(percent)}%</span>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</p>
+              <p className="text-lg font-black text-slate-800 mt-1">
+                {Math.round(value)} <span className="text-xs font-medium text-slate-500">{unit}</span>
+              </p>
+              <p className="text-xs text-slate-400 mt-1 font-medium bg-slate-50 py-1 px-2 rounded-full inline-block">Goal: {max}</p>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans pb-20 selection:bg-emerald-200">
+          <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-50 text-red-500 rounded-2xl shadow-sm text-2xl flex items-center justify-center w-10 h-10">❤️</div>
+              <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-rose-400">Healthy Day</h1>
+            </div>
+            <div className="text-sm font-bold px-4 py-2 bg-slate-100/80 rounded-full text-slate-600 hidden sm:flex items-center gap-2">
+               Nutrition Tracker 🥑
+            </div>
+          </header>
+
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              <div className="lg:col-span-4 space-y-6">
+                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                  <h2 className="text-lg font-black text-slate-800 mb-5 flex items-center gap-2"><span className="text-xl">👤</span> Your Profile</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Sex</label>
+                      <select name="sex" value={profile.sex} onChange={handleProfileChange} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 outline-none transition-all">
+                        <option value="female">Female</option>
+                        <option value="male">Male</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Age (yrs)</label>
+                      <input type="number" name="age" value={profile.age} onChange={handleProfileChange} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Weight ({profile.unit === 'imperial' ? 'lbs' : 'kg'})</label>
+                      <input type="number" name="weight" value={profile.weight} onChange={handleProfileChange} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Height ({profile.unit === 'imperial' ? 'in' : 'cm'})</label>
+                      <input type="number" name="height" value={profile.height} onChange={handleProfileChange} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 outline-none transition-all" />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                  <h2 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><span className="text-xl">🎛️</span> Adjust Intake</h2>
+                  <div className="space-y-8">
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                          <AvatarIcon emoji="⚡" bg="bg-amber-100" /> Energy (Calories)
+                        </label>
+                        <span className="text-base font-black text-amber-600 bg-amber-50 px-3 py-1 rounded-lg">{intake.calories} kcal</span>
+                      </div>
+                      <input type="range" name="calories" min="800" max="4000" step="50" value={intake.calories} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-amber-500 hover:accent-amber-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="💪" bg="bg-rose-100" /> Protein</label>
+                        <span className="text-base font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-lg">{intake.protein} g</span>
+                      </div>
+                      <input type="range" name="protein" min="0" max="250" step="5" value={intake.protein} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:accent-rose-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="🥦" bg="bg-emerald-100" /> Fiber</label>
+                        <span className="text-base font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">{intake.fiber} g</span>
+                      </div>
+                      <input type="range" name="fiber" min="0" max="100" step="1" value={intake.fiber} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="💧" bg="bg-blue-100" /> Hydration</label>
+                        <span className="text-base font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">{intake.hydration} oz</span>
+                      </div>
+                      <input type="range" name="hydration" min="0" max="150" step="4" value={intake.hydration} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="🏃" bg="bg-purple-100" /> Workout</label>
+                        <span className="text-base font-black text-purple-600 bg-purple-50 px-3 py-1 rounded-lg">{intake.workout} hr</span>
+                      </div>
+                      <input type="range" name="workout" min="0" max="4" step="0.25" value={intake.workout} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:accent-purple-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="🧘" bg="bg-teal-100" /> Stress</label>
+                        <span className="text-base font-black text-teal-600 bg-teal-50 px-3 py-1 rounded-lg">{intake.stress ?? 5} / 10</span>
+                      </div>
+                      <input type="range" name="stress" min="1" max="10" step="1" value={intake.stress ?? 5} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-teal-500 hover:accent-teal-400 transition-all" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><AvatarIcon emoji="🛏️" bg="bg-indigo-100" /> Sleep</label>
+                        <span className="text-base font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">{intake.sleep ?? 7} hr</span>
+                      </div>
+                      <input type="range" name="sleep" min="0" max="14" step="0.5" value={intake.sleep ?? 7} onChange={handleIntakeChange} className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all" />
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="lg:col-span-8 space-y-6">
+                
+                <section className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-100">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 gap-4">
+                    <div>
+                      <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">Today's Snapshot 📸</h2>
+                      <p className="text-sm font-medium text-slate-500 mt-1">Comparing your levers against optimal targets.</p>
+                    </div>
+                    <div className="text-left sm:text-right bg-indigo-50 p-3 rounded-2xl border border-indigo-100/50">
+                      <p className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Health Score</p>
+                      <p className="text-4xl font-black text-indigo-600 flex items-baseline gap-1">
+                        {calculateScore(intake)}<span className="text-lg font-semibold text-indigo-300">/100</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
+                    <ProgressRing value={intake.calories} max={goals.calories} color="text-amber-500" label="Energy (Calories)" unit="kcal" emoji="⚡" />
+                    <ProgressRing value={intake.protein} max={goals.protein} color="text-rose-500" label="Protein" unit="g" emoji="💪" />
+                    <ProgressRing value={intake.fiber} max={goals.fiber} color="text-emerald-500" label="Fiber" unit="g" emoji="🥦" />
+                    
+                    <ProgressRing value={intake.hydration} max={goals.hydration} color="text-blue-500" label="Water" unit="oz" emoji="💧" />
+                    <ProgressRing value={intake.workout} max={goals.workout} color="text-purple-500" label="Workout" unit="hr" emoji="🏃" />
+                    <ProgressRing value={intake.stress ?? 5} max={10} color="text-teal-500" label="Stress" unit="/10" emoji="🧘" />
+                    
+                    <div className="hidden sm:flex flex-col items-center justify-center p-6 bg-slate-50/50 rounded-3xl border border-slate-100 text-center shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-3xl mb-3 opacity-80">🌱</span>
+                      <p className="text-sm font-bold text-slate-500 italic">"1% better everyday will keep the doctor away"</p>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <ProgressRing value={intake.sleep ?? 7} max={goals.sleep} color="text-indigo-500" label="Sleep" unit="hr" emoji="🛏️" />
+                    </div>
+
+                    <div className="hidden sm:flex flex-col items-center justify-center p-6 bg-slate-50/50 rounded-3xl border border-slate-100 text-center shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-3xl mb-3 opacity-80">✨</span>
+                      <p className="text-sm font-bold text-slate-500 italic">"Stay focused, keep going, your doing great!"</p>
+                    </div>
+                  </div>
+
+                  {generateTips().length > 0 && (
+                    <div className="mt-8 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl">
+                      <h3 className="text-sm font-black text-indigo-900 mb-3 flex items-center gap-2"><span>💡</span> Quick Tips for Balance</h3>
+                      <ul className="space-y-2.5">
+                        {generateTips().map((tip, idx) => (
+                          <li key={idx} className="text-sm font-medium text-indigo-800 flex items-start gap-2">
+                            <IconArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-indigo-400" /> {tip}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="mt-8 pt-8 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                    <input type="text" placeholder="e.g., Option 1 (Post-Workout Day)" value={scenarioName} onChange={(e) => setScenarioName(e.target.value)} className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-xl px-5 py-3 text-sm font-semibold focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 outline-none transition-all" />
+                    <button onClick={saveScenario} className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-xl transition-colors whitespace-nowrap flex items-center justify-center gap-2 shadow-sm">
+                      <IconPlus className="w-5 h-5" /> Save as Scenario
+                    </button>
+                  </div>
+                </section>
+
+                {scenarios.length > 0 && (
+                  <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                     <h3 className="text-lg font-black text-slate-800 mb-5 flex items-center gap-2"><span className="text-xl">✨</span> Saved Scenarios</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {scenarios.map((scenario) => (
+                        <div key={scenario.id} className="relative bg-slate-50 p-5 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                          <button onClick={() => removeScenario(scenario.id)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 bg-white rounded-full p-1 shadow-sm transition-colors">
+                            <IconX className="w-4 h-4" />
+                          </button>
+                          <div className="flex justify-between items-center mb-5 pr-8">
+                            <h4 className="font-bold text-slate-800 truncate text-base">{scenario.name}</h4>
+                            <div className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-black shadow-sm">Score: {scenario.score}</div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">⚡ Energy</span><span className="text-amber-600">{scenario.intake.calories}</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(100, (scenario.intake.calories / goals.calories) * 100)}%` }}></div></div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">💪 Protein</span><span className="text-rose-600">{scenario.intake.protein}g</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(100, (scenario.intake.protein / goals.protein) * 100)}%` }}></div></div>
+                            </div>
+                             <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">🥦 Fiber</span><span className="text-emerald-600">{scenario.intake.fiber}g</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, (scenario.intake.fiber / goals.fiber) * 100)}%` }}></div></div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">💧 Water</span><span className="text-blue-600">{scenario.intake.hydration}oz</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(100, (scenario.intake.hydration / goals.hydration) * 100)}%` }}></div></div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">🏃 Workout</span><span className="text-purple-600">{scenario.intake.workout}hr</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-purple-500 rounded-full" style={{ width: `${Math.min(100, (scenario.intake.workout / goals.workout) * 100)}%` }}></div></div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">🧘 Stress</span><span className="text-teal-600">{scenario.intake.stress ?? 5}/10</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-teal-500 rounded-full" style={{ width: `${((scenario.intake.stress ?? 5) / 10) * 100}%` }}></div></div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1.5 font-semibold"><span className="text-slate-500 flex items-center gap-1">🛏️ Sleep</span><span className="text-indigo-600">{scenario.intake.sleep ?? 7}hr</span></div>
+                              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, ((scenario.intake.sleep ?? 7) / goals.sleep) * 100)}%` }}></div></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                    <h2 className="text-xl font-black text-slate-800 flex items-center gap-2"><span className="text-2xl">📅</span> Daily Tracker</h2>
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 border border-slate-200">
+                      <button onClick={prevMonth} className="p-2 hover:bg-white rounded-lg transition-colors"><IconChevronLeft className="w-5 h-5 text-slate-600" /></button>
+                      <span className="font-bold text-slate-700 min-w-[120px] text-center">{dfns.format(currentDate, 'MMMM yyyy')}</span>
+                      <button onClick={nextMonth} className="p-2 hover:bg-white rounded-lg transition-colors"><IconChevronRight className="w-5 h-5 text-slate-600" /></button>
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                        <div key={day} className="text-center text-xs font-bold text-slate-400 py-2">{day}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                      {Array.from({ length: dfns.getDay(dfns.startOfMonth(currentDate)) }).map((_, i) => (
+                        <div key={`empty-${i}`} className="p-2"></div>
+                      ))}
+                      
+                      {daysInMonth.map((date) => {
+                        const dateStr = dfns.format(date, 'yyyy-MM-dd');
+                        const isSelected = dfns.isSameDay(date, selectedDate);
+                        const isToday = dfns.isSameDay(date, new Date());
+                        const log = dailyLogs[dateStr];
+                        
+                        let bgClass = "bg-slate-50 hover:bg-slate-100 border-transparent";
+                        if (log) {
+                          if (log.score >= 80) bgClass = "bg-emerald-100 hover:bg-emerald-200 border-emerald-200 text-emerald-800";
+                          else if (log.score >= 60) bgClass = "bg-amber-100 hover:bg-amber-200 border-amber-200 text-amber-800";
+                          else bgClass = "bg-rose-100 hover:bg-rose-200 border-rose-200 text-rose-800";
+                        }
+
+                        return (
+                          <button
+                            key={dateStr}
+                            onClick={() => setSelectedDate(date)}
+                            className={`relative flex flex-col items-center justify-center p-2 sm:p-3 rounded-2xl border-2 transition-all ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500 shadow-md transform scale-105 z-10' : bgClass} ${!log && isSelected ? 'bg-indigo-50 border-indigo-200' : ''}`}
+                          >
+                            <span className={`text-sm sm:text-base font-bold ${isToday && !isSelected && !log ? 'text-indigo-600' : ''}`}>{dfns.format(date, 'd')}</span>
+                            {log && <span className="text-[10px] font-black mt-1 opacity-80 hidden sm:block">{log.score}</span>}
+                            {log && <div className="w-1.5 h-1.5 rounded-full bg-current mt-1 sm:hidden"></div>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-indigo-50 rounded-2xl border border-indigo-100">
+                    <div>
+                      <p className="text-sm font-bold text-indigo-900">{dfns.isSameDay(selectedDate, new Date()) ? 'Today' : dfns.format(selectedDate, 'MMM do, yyyy')}</p>
+                      <p className="text-xs text-indigo-700 mt-0.5">{dailyLogs[dfns.format(selectedDate, 'yyyy-MM-dd')] ? 'Update data for this day with current slider values.' : 'Log current slider values to this date.'}</p>
+                    </div>
+                    <button onClick={logDay} className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2">
+                      <IconCheckCircle2 className="w-4 h-4" /> {dailyLogs[dfns.format(selectedDate, 'yyyy-MM-dd')] ? 'Update Log' : 'Save Log'}
+                    </button>
+                  </div>
+
+                  {selectedWeekSummary && (
+                    <div className="mt-6 border-t border-slate-100 pt-6">
+                      <h3 className="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span className="text-lg">📊</span> Week of {dfns.format(dfns.startOfWeek(selectedDate), 'MMM do')} Summary</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-wrap gap-3">
+                         <div className="col-span-2 sm:col-span-3 md:flex-1 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center flex flex-col justify-center min-w-[120px]">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Avg Score</p>
+                            <p className="text-2xl font-black text-indigo-600">{selectedWeekSummary.avgScore}</p>
+                            <p className="text-[10px] font-medium text-slate-400 mt-1">{selectedWeekSummary.daysLogged} days logged</p>
+                         </div>
+                         <div className="flex-1 bg-amber-50 p-3 rounded-2xl border border-amber-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">⚡</span>
+                            <p className="text-lg font-bold text-amber-700">{selectedWeekSummary.avgCalories}</p>
+                            <p className="text-[10px] font-bold text-amber-600/70 uppercase">kcal</p>
+                         </div>
+                         <div className="flex-1 bg-rose-50 p-3 rounded-2xl border border-rose-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">💪</span>
+                            <p className="text-lg font-bold text-rose-700">{selectedWeekSummary.avgProtein}</p>
+                            <p className="text-[10px] font-bold text-rose-600/70 uppercase">g</p>
+                         </div>
+                         <div className="flex-1 bg-emerald-50 p-3 rounded-2xl border border-emerald-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">🥦</span>
+                            <p className="text-lg font-bold text-emerald-700">{selectedWeekSummary.avgFiber}</p>
+                            <p className="text-[10px] font-bold text-emerald-600/70 uppercase">g</p>
+                         </div>
+                         <div className="flex-1 bg-blue-50 p-3 rounded-2xl border border-blue-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">💧</span>
+                            <p className="text-lg font-bold text-blue-700">{selectedWeekSummary.avgHydration}</p>
+                            <p className="text-[10px] font-bold text-blue-600/70 uppercase">oz</p>
+                         </div>
+                         <div className="flex-1 bg-purple-50 p-3 rounded-2xl border border-purple-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">🏃</span>
+                            <p className="text-lg font-bold text-purple-700">{selectedWeekSummary.avgWorkout}</p>
+                            <p className="text-[10px] font-bold text-purple-600/70 uppercase">hr</p>
+                         </div>
+                         <div className="flex-1 bg-teal-50 p-3 rounded-2xl border border-teal-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">🧘</span>
+                            <p className="text-lg font-bold text-teal-700">{selectedWeekSummary.avgStress}</p>
+                            <p className="text-[10px] font-bold text-teal-600/70 uppercase">/10</p>
+                         </div>
+                         <div className="flex-1 bg-indigo-50 p-3 rounded-2xl border border-indigo-100/50 flex flex-col items-center justify-center text-center min-w-[80px]">
+                            <span className="text-xl mb-1">🛏️</span>
+                            <p className="text-lg font-bold text-indigo-700">{selectedWeekSummary.avgSleep}</p>
+                            <p className="text-[10px] font-bold text-indigo-600/70 uppercase">hr</p>
+                         </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<HealthyDay />);
+  </script>
+</body>
+</html>
